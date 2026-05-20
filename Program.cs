@@ -37,13 +37,13 @@ if (!int.TryParse(jwtExpirationMinutesRaw, out var jwtExpirationMinutes))
     throw new InvalidOperationException("JWT_EXPIRATION_MINUTES must be a valid integer.");
 }
 
-var corsOriginsRaw = configuration["CORS_ORIGINS"]
-                     ?? throw new InvalidOperationException("CORS_ORIGINS environment variable is required.");
+var corsOriginsRaw = configuration["CORS_ALLOWED_ORIGINS"]
+                     ?? throw new InvalidOperationException("CORS_ALLOWED_ORIGINS environment variable is required.");
 var corsOrigins = corsOriginsRaw
     .Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
 if (corsOrigins.Length == 0)
 {
-    throw new InvalidOperationException("CORS_ORIGINS must contain at least one origin.");
+    throw new InvalidOperationException("CORS_ALLOWED_ORIGINS must contain at least one origin.");
 }
 
 var aspnetcoreUrls = configuration["ASPNETCORE_URLS"];
@@ -152,7 +152,7 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 
 builder.Services.AddCors(options =>
 {
-    options.AddPolicy("AllowSpecificOrigins", policy =>
+    options.AddPolicy("JirafeCorsPolicy", policy =>
     {
         policy.WithOrigins(corsOrigins)
             .AllowAnyMethod()
@@ -181,7 +181,7 @@ app.UseSwaggerUI(options =>
 
 app.UseHttpsRedirection();
 
-app.UseCors("AllowSpecificOrigins");
+app.UseCors("JirafeCorsPolicy");
 
 app.UseAuthentication();
 app.UseAuthorization();
