@@ -32,7 +32,7 @@ public class ListsController : ControllerBase
         if (result == null)
             return BadRequest("Failed to create list.");
 
-        return CreatedAtAction(nameof(ListsController), new { id = result.Id }, result);
+        return Created($"/api/lists/{result.Id}", result);
     }
 
     [HttpPut("{id}")]

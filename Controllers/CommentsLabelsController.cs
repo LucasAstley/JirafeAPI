@@ -32,7 +32,7 @@ public class CommentsController : ControllerBase
         if (result == null)
             return BadRequest("Failed to create comment.");
 
-        return CreatedAtAction(nameof(CommentsController), new { id = result.Id }, result);
+        return Created($"/api/comments/{result.Id}", result);
     }
 
     [HttpGet("card/{cardId}")]
@@ -92,7 +92,7 @@ public class LabelsController : ControllerBase
         if (result == null)
             return BadRequest("Failed to create label.");
 
-        return CreatedAtAction(nameof(LabelsController), new { id = result.Id }, result);
+        return Created($"/api/labels/{result.Id}", result);
     }
 
     [HttpGet("board/{boardId}")]
