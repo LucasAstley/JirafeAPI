@@ -2,6 +2,7 @@ using DotNetEnv;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
+using Microsoft.OpenApi;
 using System.Text;
 using JirafeAPI.Data;
 using JirafeAPI.Hubs;
@@ -61,8 +62,39 @@ else
 }
 
 builder.Services.AddControllers();
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen(options =>
+{
+    options.SwaggerDoc("v1", new OpenApiInfo
+    {
+        Title = "JirafeAPI",
+        Version = "v1",
+        Description = "API documentation for Jirafe"
+    });
 
-builder.Services.AddOpenApi();
+    var jwtSecurityScheme = new OpenApiSecurityScheme
+    {
+        BearerFormat = "JWT",
+        Name = "Authorization",
+        In = ParameterLocation.Header,
+        Type = SecuritySchemeType.Http,
+        Scheme = "bearer",
+        Description = "Paste your JWT token here",
+    };
+
+    options.AddSecurityDefinition(JwtBearerDefaults.AuthenticationScheme, jwtSecurityScheme);
+    options.AddSecurityRequirement(document => new OpenApiSecurityRequirement
+    {
+        {
+            new OpenApiSecuritySchemeReference(
+                JwtBearerDefaults.AuthenticationScheme,
+                hostDocument: document,
+                externalResource: null
+            ),
+            new List<string>()
+        }
+    });
+});
 
 if (databaseProvider.Equals("Sqlite", StringComparison.OrdinalIgnoreCase))
 {
@@ -140,10 +172,12 @@ using (var scope = app.Services.CreateScope())
     db.Database.Migrate();
 }
 
-if (app.Environment.IsDevelopment())
+app.UseSwagger();
+app.UseSwaggerUI(options =>
 {
-    app.MapOpenApi();
-}
+    options.SwaggerEndpoint("/swagger/v1/swagger.json", "JirafeAPI v1");
+    options.RoutePrefix = "swagger";
+});
 
 app.UseHttpsRedirection();
 
