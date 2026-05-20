@@ -1,12 +1,22 @@
+using JirafeAPI.Data;
+using Microsoft.EntityFrameworkCore;
+
 var builder = WebApplication.CreateBuilder(args);
 
-// Add services to the container.
-// Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddOpenApi();
+
+var connectionString = builder.Configuration.GetConnectionString("DefaultConnection") ?? "Data Source=jirafe.db";
+builder.Services.AddDbContext<TaskBoardDbContext>(options =>
+    options.UseSqlite(connectionString));
 
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
+using (var scope = app.Services.CreateScope())
+{
+    var db = scope.ServiceProvider.GetRequiredService<TaskBoardDbContext>();
+    db.Database.Migrate();
+}
+
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
