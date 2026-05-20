@@ -9,20 +9,56 @@ using JirafeAPI.Repositories;
 using JirafeAPI.Services;
 using JirafeAPI.Utilities;
 
-Env.Load();
+Env.TraversePath().Load();
 
 var builder = WebApplication.CreateBuilder(args);
 
-var environment = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") ?? "Development";
-var databaseProvider = Environment.GetEnvironmentVariable("DATABASE_PROVIDER") ?? "Sqlite";
-var sqliteConnectionString = Environment.GetEnvironmentVariable("SQLITE_CONNECTION_STRING") ?? "Data Source=jirafe.db";
-var postgresConnectionString = Environment.GetEnvironmentVariable("POSTGRESQL_CONNECTION_STRING");
-var jwtSecret = Environment.GetEnvironmentVariable("JWT_SECRET") ??
-                "your_very_secure_secret_key_change_this_in_production_at_least_32_characters_long";
-var jwtIssuer = Environment.GetEnvironmentVariable("JWT_ISSUER") ?? "JirafeAPI";
-var jwtAudience = Environment.GetEnvironmentVariable("JWT_AUDIENCE") ?? "JirafeClient";
-var jwtExpirationMinutes = int.Parse(Environment.GetEnvironmentVariable("JWT_EXPIRATION_MINUTES") ?? "15");
-var corsOrigins = Environment.GetEnvironmentVariable("CORS_ORIGINS")?.Split(",") ?? new[] { "http://localhost:3000" };
+var configuration = builder.Configuration;
+
+var databaseProvider = configuration["DATABASE_PROVIDER"]
+                       ?? throw new InvalidOperationException("DATABASE_PROVIDER environment variable is required.");
+var sqliteConnectionString = configuration["SQLITE_CONNECTION_STRING"]
+                             ?? configuration.GetConnectionString("DefaultConnection")
+                             ?? throw new InvalidOperationException(
+                                 "SQLITE_CONNECTION_STRING environment variable is required for Sqlite provider.");
+var postgresConnectionString = configuration["POSTGRESQL_CONNECTION_STRING"];
+var jwtSecret = configuration["JWT_SECRET"]
+                ?? throw new InvalidOperationException("JWT_SECRET environment variable is required.");
+var jwtIssuer = configuration["JWT_ISSUER"]
+                ?? throw new InvalidOperationException("JWT_ISSUER environment variable is required.");
+var jwtAudience = configuration["JWT_AUDIENCE"]
+                  ?? throw new InvalidOperationException("JWT_AUDIENCE environment variable is required.");
+var jwtExpirationMinutesRaw = configuration["JWT_EXPIRATION_MINUTES"]
+                              ?? throw new InvalidOperationException(
+                                  "JWT_EXPIRATION_MINUTES environment variable is required.");
+if (!int.TryParse(jwtExpirationMinutesRaw, out var jwtExpirationMinutes))
+{
+    throw new InvalidOperationException("JWT_EXPIRATION_MINUTES must be a valid integer.");
+}
+
+var corsOriginsRaw = configuration["CORS_ORIGINS"]
+                     ?? throw new InvalidOperationException("CORS_ORIGINS environment variable is required.");
+var corsOrigins = corsOriginsRaw
+    .Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+if (corsOrigins.Length == 0)
+{
+    throw new InvalidOperationException("CORS_ORIGINS must contain at least one origin.");
+}
+
+var aspnetcoreUrls = configuration["ASPNETCORE_URLS"];
+if (!string.IsNullOrWhiteSpace(aspnetcoreUrls))
+{
+    builder.WebHost.UseUrls(aspnetcoreUrls);
+}
+else
+{
+    var apiHost = configuration["API_HOST"];
+    var apiPort = configuration["API_PORT"];
+    if (!string.IsNullOrWhiteSpace(apiHost) && !string.IsNullOrWhiteSpace(apiPort))
+    {
+        builder.WebHost.UseUrls($"http://{apiHost}:{apiPort}");
+    }
+}
 
 builder.Services.AddControllers();
 
