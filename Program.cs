@@ -62,6 +62,7 @@ else
 }
 
 builder.Services.AddControllers();
+builder.Services.AddRouting(options => options.LowercaseUrls = true);
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(options =>
 {
