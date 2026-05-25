@@ -211,3 +211,6 @@ FakesAssemblies/
 
 # IDE
 .idea/
+
+# Environement variables
+.env
