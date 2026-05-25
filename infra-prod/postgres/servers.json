@@ -1,0 +1,13 @@
+{
+  "Servers": {
+    "1": {
+      "Name": "Jirafe PostgreSQL",
+      "Group": "Servers",
+      "Host": "postgres",
+      "Port": 5432,
+      "MaintenanceDB": "jirafe_prod",
+      "Username": "jirafe_user",
+      "SSLMode": "prefer"
+    }
+  }
+}
