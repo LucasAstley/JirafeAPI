@@ -10,13 +10,20 @@ public class CommentService : ICommentService
     private readonly ICardRepository _cardRepository;
     private readonly IListRepository _listRepository;
     private readonly IBoardMemberRepository _boardMemberRepository;
+    private readonly IBoardRealtimeNotifier _realtimeNotifier;
 
-    public CommentService(ICommentRepository commentRepository, ICardRepository cardRepository, IListRepository listRepository, IBoardMemberRepository boardMemberRepository)
+    public CommentService(
+        ICommentRepository commentRepository,
+        ICardRepository cardRepository,
+        IListRepository listRepository,
+        IBoardMemberRepository boardMemberRepository,
+        IBoardRealtimeNotifier realtimeNotifier)
     {
         _commentRepository = commentRepository;
         _cardRepository = cardRepository;
         _listRepository = listRepository;
         _boardMemberRepository = boardMemberRepository;
+        _realtimeNotifier = realtimeNotifier;
     }
 
     public async Task<CommentDto?> CreateCommentAsync(CreateCommentRequest request, int userId)
@@ -44,7 +51,7 @@ public class CommentService : ICommentService
         await _commentRepository.AddAsync(comment);
         await _commentRepository.SaveChangesAsync();
 
-        return new CommentDto
+        var dto = new CommentDto
         {
             Id = comment.Id,
             Content = comment.Content,
@@ -54,6 +61,8 @@ public class CommentService : ICommentService
             CreatedAt = comment.CreatedAt,
             UpdatedAt = comment.UpdatedAt
         };
+        await _realtimeNotifier.CommentCreatedAsync(list.BoardId, dto);
+        return dto;
     }
 
     public async Task<List<CommentDto>> GetCardCommentsAsync(int cardId, int userId)
@@ -95,6 +104,12 @@ public class CommentService : ICommentService
 
         await _commentRepository.UpdateAsync(comment);
         await _commentRepository.SaveChangesAsync();
+        var card = await _cardRepository.GetByIdAsync(comment.CardId);
+        var list = card == null ? null : await _listRepository.GetByIdAsync(card.ListId);
+        if (list != null)
+        {
+            await _realtimeNotifier.CommentUpdatedAsync(list.BoardId, comment.Id);
+        }
 
         return true;
     }
@@ -105,8 +120,14 @@ public class CommentService : ICommentService
         if (comment == null || comment.UserId != userId)
             return false;
 
+        var card = await _cardRepository.GetByIdAsync(comment.CardId);
+        var list = card == null ? null : await _listRepository.GetByIdAsync(card.ListId);
         await _commentRepository.DeleteAsync(comment);
         await _commentRepository.SaveChangesAsync();
+        if (list != null)
+        {
+            await _realtimeNotifier.CommentDeletedAsync(list.BoardId, comment.CardId, commentId);
+        }
 
         return true;
     }
@@ -116,11 +137,13 @@ public class LabelService : ILabelService
 {
     private readonly ILabelRepository _labelRepository;
     private readonly IBoardMemberRepository _boardMemberRepository;
+    private readonly IBoardRealtimeNotifier _realtimeNotifier;
 
-    public LabelService(ILabelRepository labelRepository, IBoardMemberRepository boardMemberRepository)
+    public LabelService(ILabelRepository labelRepository, IBoardMemberRepository boardMemberRepository, IBoardRealtimeNotifier realtimeNotifier)
     {
         _labelRepository = labelRepository;
         _boardMemberRepository = boardMemberRepository;
+        _realtimeNotifier = realtimeNotifier;
     }
 
     public async Task<LabelDto?> CreateLabelAsync(CreateLabelRequest request, int userId)
@@ -139,13 +162,15 @@ public class LabelService : ILabelService
         await _labelRepository.AddAsync(label);
         await _labelRepository.SaveChangesAsync();
 
-        return new LabelDto
+        var dto = new LabelDto
         {
             Id = label.Id,
             Name = label.Name,
             ColorHex = label.ColorHex,
             BoardId = label.BoardId
         };
+        await _realtimeNotifier.LabelCreatedAsync(label.BoardId, dto);
+        return dto;
     }
 
     public async Task<List<LabelDto>> GetBoardLabelsAsync(int boardId, int userId)
@@ -175,10 +200,11 @@ public class LabelService : ILabelService
         if (!isBoardMember)
             return false;
 
+        var boardId = label.BoardId;
         await _labelRepository.DeleteAsync(label);
         await _labelRepository.SaveChangesAsync();
+        await _realtimeNotifier.LabelDeletedAsync(boardId, labelId);
 
         return true;
     }
 }
-

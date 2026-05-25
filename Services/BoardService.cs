@@ -11,14 +11,22 @@ public class BoardService : IBoardService
     private readonly IListRepository _listRepository;
     private readonly ILabelRepository _labelRepository;
     private readonly IWorkspaceMemberRepository _workspaceMemberRepository;
+    private readonly IBoardRealtimeNotifier _realtimeNotifier;
 
-    public BoardService(IBoardRepository boardRepository, IBoardMemberRepository boardMemberRepository, IListRepository listRepository, ILabelRepository labelRepository, IWorkspaceMemberRepository workspaceMemberRepository)
+    public BoardService(
+        IBoardRepository boardRepository,
+        IBoardMemberRepository boardMemberRepository,
+        IListRepository listRepository,
+        ILabelRepository labelRepository,
+        IWorkspaceMemberRepository workspaceMemberRepository,
+        IBoardRealtimeNotifier realtimeNotifier)
     {
         _boardRepository = boardRepository;
         _boardMemberRepository = boardMemberRepository;
         _listRepository = listRepository;
         _labelRepository = labelRepository;
         _workspaceMemberRepository = workspaceMemberRepository;
+        _realtimeNotifier = realtimeNotifier;
     }
 
     public async Task<BoardDto?> CreateBoardAsync(CreateBoardRequest request, int userId)
@@ -37,23 +45,30 @@ public class BoardService : IBoardService
         await _boardRepository.AddAsync(board);
         await _boardRepository.SaveChangesAsync();
 
-        var boardMember = new BoardMember
+        var workspaceMembers = await _workspaceMemberRepository.GetByWorkspaceIdAsync(request.WorkspaceId);
+        var boardMembers = workspaceMembers.Select(member => new BoardMember
         {
             BoardId = board.Id,
-            UserId = userId,
+            UserId = member.UserId,
             JoinedAt = DateTime.UtcNow
-        };
+        }).ToList();
 
-        await _boardMemberRepository.AddAsync(boardMember);
+        foreach (var boardMember in boardMembers)
+        {
+            await _boardMemberRepository.AddAsync(boardMember);
+        }
         await _boardMemberRepository.SaveChangesAsync();
 
-        return new BoardDto
+        var dto = new BoardDto
         {
             Id = board.Id,
             Title = board.Title,
             WorkspaceId = board.WorkspaceId,
             CreatedAt = board.CreatedAt
         };
+
+        await _realtimeNotifier.BoardCreatedAsync(board.WorkspaceId, dto);
+        return dto;
     }
 
     public async Task<BoardDetailDto?> GetBoardAsync(int boardId, int userId)
@@ -140,6 +155,7 @@ public class BoardService : IBoardService
 
         await _boardRepository.UpdateAsync(board);
         await _boardRepository.SaveChangesAsync();
+        await _realtimeNotifier.BoardUpdatedAsync(board.Id, board.Title);
 
         return true;
     }
@@ -156,8 +172,8 @@ public class BoardService : IBoardService
 
         await _boardRepository.DeleteAsync(board);
         await _boardRepository.SaveChangesAsync();
+        await _realtimeNotifier.BoardDeletedAsync(board.WorkspaceId, boardId);
 
         return true;
     }
 }
-

@@ -8,11 +8,13 @@ public class ListService : IListService
 {
     private readonly IListRepository _listRepository;
     private readonly IBoardMemberRepository _boardMemberRepository;
+    private readonly IBoardRealtimeNotifier _realtimeNotifier;
 
-    public ListService(IListRepository listRepository, IBoardMemberRepository boardMemberRepository)
+    public ListService(IListRepository listRepository, IBoardMemberRepository boardMemberRepository, IBoardRealtimeNotifier realtimeNotifier)
     {
         _listRepository = listRepository;
         _boardMemberRepository = boardMemberRepository;
+        _realtimeNotifier = realtimeNotifier;
     }
 
     public async Task<ListDto?> CreateListAsync(CreateListRequest request, int userId)
@@ -32,7 +34,7 @@ public class ListService : IListService
         await _listRepository.AddAsync(list);
         await _listRepository.SaveChangesAsync();
 
-        return new ListDto
+        var dto = new ListDto
         {
             Id = list.Id,
             Title = list.Title,
@@ -41,6 +43,8 @@ public class ListService : IListService
             CreatedAt = list.CreatedAt,
             Cards = new List<CardDto>()
         };
+        await _realtimeNotifier.ListCreatedAsync(list.BoardId, dto);
+        return dto;
     }
 
     public async Task<bool> UpdateListAsync(int listId, UpdateListRequest request, int userId)
@@ -61,6 +65,7 @@ public class ListService : IListService
 
         await _listRepository.UpdateAsync(list);
         await _listRepository.SaveChangesAsync();
+        await _realtimeNotifier.ListUpdatedAsync(list.BoardId, list.Id);
 
         return true;
     }
@@ -75,8 +80,10 @@ public class ListService : IListService
         if (!isBoardMember)
             return false;
 
+        var boardId = list.BoardId;
         await _listRepository.DeleteAsync(list);
         await _listRepository.SaveChangesAsync();
+        await _realtimeNotifier.ListDeletedAsync(boardId, listId);
 
         return true;
     }
@@ -89,14 +96,22 @@ public class CardService : ICardService
     private readonly ICardLabelRepository _cardLabelRepository;
     private readonly IListRepository _listRepository;
     private readonly IBoardMemberRepository _boardMemberRepository;
+    private readonly IBoardRealtimeNotifier _realtimeNotifier;
 
-    public CardService(ICardRepository cardRepository, ICardMemberRepository cardMemberRepository, ICardLabelRepository cardLabelRepository, IListRepository listRepository, IBoardMemberRepository boardMemberRepository)
+    public CardService(
+        ICardRepository cardRepository,
+        ICardMemberRepository cardMemberRepository,
+        ICardLabelRepository cardLabelRepository,
+        IListRepository listRepository,
+        IBoardMemberRepository boardMemberRepository,
+        IBoardRealtimeNotifier realtimeNotifier)
     {
         _cardRepository = cardRepository;
         _cardMemberRepository = cardMemberRepository;
         _cardLabelRepository = cardLabelRepository;
         _listRepository = listRepository;
         _boardMemberRepository = boardMemberRepository;
+        _realtimeNotifier = realtimeNotifier;
     }
 
     public async Task<CardDto?> CreateCardAsync(CreateCardRequest request, int userId)
@@ -122,7 +137,7 @@ public class CardService : ICardService
         await _cardRepository.AddAsync(card);
         await _cardRepository.SaveChangesAsync();
 
-        return new CardDto
+        var dto = new CardDto
         {
             Id = card.Id,
             Title = card.Title,
@@ -135,6 +150,8 @@ public class CardService : ICardService
             LabelIds = new List<int>(),
             CommentCount = 0
         };
+        await _realtimeNotifier.CardCreatedAsync(list.BoardId, dto);
+        return dto;
     }
 
     public async Task<CardDto?> GetCardAsync(int cardId, int userId)
@@ -194,6 +211,7 @@ public class CardService : ICardService
 
         await _cardRepository.UpdateAsync(card);
         await _cardRepository.SaveChangesAsync();
+        await _realtimeNotifier.CardUpdatedAsync(list.BoardId, card.Id);
 
         return true;
     }
@@ -212,11 +230,15 @@ public class CardService : ICardService
         if (!isBoardMember)
             return false;
 
+        var oldBoardId = list.BoardId;
         card.ListId = request.ListId;
         card.Position = request.Position;
 
         await _cardRepository.UpdateAsync(card);
         await _cardRepository.SaveChangesAsync();
+        var targetList = await _listRepository.GetByIdAsync(request.ListId);
+        var targetBoardId = targetList?.BoardId ?? oldBoardId;
+        await _realtimeNotifier.CardMovedAsync(targetBoardId, card.Id, card.ListId, card.Position);
 
         return true;
     }
@@ -235,8 +257,10 @@ public class CardService : ICardService
         if (!isBoardMember)
             return false;
 
+        var boardId = list.BoardId;
         await _cardRepository.DeleteAsync(card);
         await _cardRepository.SaveChangesAsync();
+        await _realtimeNotifier.CardDeletedAsync(boardId, cardId);
 
         return true;
     }
@@ -255,6 +279,14 @@ public class CardService : ICardService
         if (!isBoardMember)
             return false;
 
+        var targetIsBoardMember = await _boardMemberRepository.IsBoardMemberAsync(list.BoardId, assignedUserId);
+        if (!targetIsBoardMember)
+            return false;
+
+        var existingAssignments = await _cardMemberRepository.GetByCardIdAsync(cardId);
+        if (existingAssignments.Any(cm => cm.UserId == assignedUserId))
+            return true;
+
         var cardMember = new CardMember
         {
             CardId = cardId,
@@ -263,6 +295,7 @@ public class CardService : ICardService
 
         await _cardMemberRepository.AddAsync(cardMember);
         await _cardMemberRepository.SaveChangesAsync();
+        await _realtimeNotifier.CardMemberAssignedAsync(list.BoardId, cardId, assignedUserId);
 
         return true;
     }
@@ -281,12 +314,14 @@ public class CardService : ICardService
         if (!isBoardMember)
             return false;
 
-        var cardMember = card.CardMembers.FirstOrDefault(cm => cm.UserId == assignedUserId);
+        var assignments = await _cardMemberRepository.GetByCardIdAsync(cardId);
+        var cardMember = assignments.FirstOrDefault(cm => cm.UserId == assignedUserId);
         if (cardMember == null)
             return false;
 
         await _cardMemberRepository.DeleteAsync(cardMember);
         await _cardMemberRepository.SaveChangesAsync();
+        await _realtimeNotifier.CardMemberRemovedAsync(list.BoardId, cardId, assignedUserId);
 
         return true;
     }
@@ -305,6 +340,10 @@ public class CardService : ICardService
         if (!isBoardMember)
             return false;
 
+        var existingLabels = await _cardLabelRepository.GetByCardIdAsync(cardId);
+        if (existingLabels.Any(cl => cl.LabelId == labelId))
+            return true;
+
         var cardLabel = new CardLabel
         {
             CardId = cardId,
@@ -313,6 +352,7 @@ public class CardService : ICardService
 
         await _cardLabelRepository.AddAsync(cardLabel);
         await _cardLabelRepository.SaveChangesAsync();
+        await _realtimeNotifier.CardLabelAddedAsync(list.BoardId, cardId, labelId);
 
         return true;
     }
@@ -331,14 +371,15 @@ public class CardService : ICardService
         if (!isBoardMember)
             return false;
 
-        var cardLabel = card.CardLabels.FirstOrDefault(cl => cl.LabelId == labelId);
+        var labels = await _cardLabelRepository.GetByCardIdAsync(cardId);
+        var cardLabel = labels.FirstOrDefault(cl => cl.LabelId == labelId);
         if (cardLabel == null)
             return false;
 
         await _cardLabelRepository.DeleteAsync(cardLabel);
         await _cardLabelRepository.SaveChangesAsync();
+        await _realtimeNotifier.CardLabelRemovedAsync(list.BoardId, cardId, labelId);
 
         return true;
     }
 }
-

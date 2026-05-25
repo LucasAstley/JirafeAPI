@@ -131,6 +131,11 @@ public class ListRepository : BaseRepository<Entities.List>, IListRepository
             .Where(l => l.BoardId == boardId)
             .OrderBy(l => l.Position)
             .Include(l => l.Cards.OrderBy(c => c.Position))
+                .ThenInclude(c => c.CardMembers)
+            .Include(l => l.Cards.OrderBy(c => c.Position))
+                .ThenInclude(c => c.CardLabels)
+            .Include(l => l.Cards.OrderBy(c => c.Position))
+                .ThenInclude(c => c.Comments)
             .ToListAsync();
     }
 }
@@ -228,4 +233,3 @@ public class CommentRepository : BaseRepository<Comment>, ICommentRepository
         return await _dbSet.CountAsync(c => c.CardId == cardId);
     }
 }
-

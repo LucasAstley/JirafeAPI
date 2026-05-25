@@ -9,12 +9,21 @@ public class WorkspaceService : IWorkspaceService
     private readonly IWorkspaceRepository _workspaceRepository;
     private readonly IWorkspaceMemberRepository _workspaceMemberRepository;
     private readonly IUserRepository _userRepository;
+    private readonly IBoardRepository _boardRepository;
+    private readonly IBoardMemberRepository _boardMemberRepository;
 
-    public WorkspaceService(IWorkspaceRepository workspaceRepository, IWorkspaceMemberRepository workspaceMemberRepository, IUserRepository userRepository)
+    public WorkspaceService(
+        IWorkspaceRepository workspaceRepository,
+        IWorkspaceMemberRepository workspaceMemberRepository,
+        IUserRepository userRepository,
+        IBoardRepository boardRepository,
+        IBoardMemberRepository boardMemberRepository)
     {
         _workspaceRepository = workspaceRepository;
         _workspaceMemberRepository = workspaceMemberRepository;
         _userRepository = userRepository;
+        _boardRepository = boardRepository;
+        _boardMemberRepository = boardMemberRepository;
     }
 
     public async Task<WorkspaceDto?> CreateWorkspaceAsync(CreateWorkspaceRequest request, int userId)
@@ -140,6 +149,21 @@ public class WorkspaceService : IWorkspaceService
         await _workspaceMemberRepository.AddAsync(member);
         await _workspaceMemberRepository.SaveChangesAsync();
 
+        var boards = await _boardRepository.GetByWorkspaceIdAsync(workspaceId);
+        foreach (var board in boards)
+        {
+            var alreadyBoardMember = await _boardMemberRepository.IsBoardMemberAsync(board.Id, targetUser.Id);
+            if (alreadyBoardMember) continue;
+
+            await _boardMemberRepository.AddAsync(new BoardMember
+            {
+                BoardId = board.Id,
+                UserId = targetUser.Id,
+                JoinedAt = DateTime.UtcNow
+            });
+        }
+        await _boardMemberRepository.SaveChangesAsync();
+
         return true;
     }
 
@@ -162,4 +186,3 @@ public class WorkspaceService : IWorkspaceService
         }).ToList();
     }
 }
-
